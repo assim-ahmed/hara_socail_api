@@ -1,0 +1,18 @@
+{
+    "name": "assim/hara_social_api",
+    "autoload": {
+        "psr-4": {
+            "Assim\\HaraSocialApi\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "assim-ahmed",
+            "email": "assimahmed031@gmail.com"
+        }
+    ],
+    "require": {
+        "firebase/php-jwt": "^7.0",
+        "cboden/ratchet": "^0.4.4"
+    }
+}
