@@ -20,16 +20,18 @@ function authenticate($db) {
     }
     
     if (!$token) {
+      
         sendResponse(false, "غير مصرح. يرجى تسجيل الدخول", null, 401);
     }
+    
     
     // التحقق من صحة التوكن
     $decoded = JWTHelper::verifyToken($token);
     
     if (!$decoded) {
         sendResponse(false, "التوكن غير صالح أو منتهي الصلاحية", null, 401);
-    }
-    
+        }
+        
     // جلب بيانات المستخدم من قاعدة البيانات
     $query = "SELECT id, username, full_name, email, bio, profile_pic 
               FROM users WHERE id = :user_id";

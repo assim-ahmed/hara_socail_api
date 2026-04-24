@@ -4,7 +4,7 @@ namespace HaraSocial;
 use Ratchet\MessageComponentInterface;
 use Ratchet\ConnectionInterface;
 use PDO;
-use PDOException;  // ← أضف هذا السطر
+use PDOException;
 
 class ChatHandler implements MessageComponentInterface
 {
@@ -12,10 +12,16 @@ class ChatHandler implements MessageComponentInterface
     protected $users;
     protected $db;
     
+    // ✅ إضافة متغيرات جديدة فقط
+    protected $userDetails;
+    protected $rooms;
+    
     public function __construct()
     {
         $this->clients = new \SplObjectStorage;
         $this->users = [];
+        $this->userDetails = [];  // ✅ جديد
+        $this->rooms = [];         // ✅ جديد
         
         // اتصال بقاعدة البيانات
         try {
@@ -26,7 +32,7 @@ class ChatHandler implements MessageComponentInterface
             );
             $this->db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             echo "✅ Database connected\n";
-        } catch (PDOException $e) {  // ← دلوقتي هتشتغل
+        } catch (PDOException $e) {
             echo "❌ Database error: " . $e->getMessage() . "\n";
         }
         
@@ -50,7 +56,17 @@ class ChatHandler implements MessageComponentInterface
         // تسجيل الدخول (ربط user_id بالاتصال)
         if (isset($data['type']) && $data['type'] === 'auth') {
             $this->users[$data['user_id']] = $from;
+            
+            // ✅ جديد: جلب بيانات المستخدم
+            $this->userDetails[$data['user_id']] = $this->getUserDetails($data['user_id']);
+            
             echo "✅ User {$data['user_id']} authenticated\n";
+            
+            // ✅ جديد: إرسال قائمة المتصلين للمستخدم الجديد
+            $this->sendOnlineUsersToClient($from);
+            
+            // ✅ جديد: بث المتصلين للجميع
+            $this->broadcastOnlineUsers();
             return;
         }
         
@@ -62,6 +78,21 @@ class ChatHandler implements MessageComponentInterface
         // حالة الكتابة (typing)
         if (isset($data['type']) && $data['type'] === 'typing') {
             $this->handleTyping($from, $data);
+        }
+        
+        // ✅ جديد: معالجة حالة المستخدم (متصل/غير متصل)
+        if (isset($data['type']) && $data['type'] === 'status') {
+            $this->handleStatus($from, $data);
+        }
+        
+        // ✅ جديد: الانضمام لغرفة
+        if (isset($data['type']) && $data['type'] === 'join') {
+            $this->handleJoinRoom($from, $data);
+        }
+        
+        // ✅ جديد: مغادرة غرفة
+        if (isset($data['type']) && $data['type'] === 'leave') {
+            $this->handleLeaveRoom($from, $data);
         }
     }
     
@@ -116,6 +147,100 @@ class ChatHandler implements MessageComponentInterface
         }
     }
     
+    // ✅ جديد: معالجة حالة المستخدم
+    private function handleStatus($from, $data)
+    {
+        $userId = array_search($from, $this->users, true);
+        if ($userId !== false) {
+            $isOnline = $data['is_online'] ?? true;
+            
+            if ($isOnline) {
+                $this->users[$userId] = $from;
+                $this->userDetails[$userId] = $this->getUserDetails($userId);
+            } else {
+                unset($this->users[$userId]);
+                unset($this->userDetails[$userId]);
+            }
+            
+            $this->broadcastOnlineUsers();
+        }
+    }
+    
+    // ✅ جديد: الانضمام لغرفة
+    private function handleJoinRoom($from, $data)
+    {
+        $conversationId = $data['conversation_id'];
+        $userId = array_search($from, $this->users, true);
+        
+        if ($userId) {
+            if (!isset($this->rooms[$conversationId])) {
+                $this->rooms[$conversationId] = [];
+            }
+            $this->rooms[$conversationId][$userId] = $from;
+            echo "👤 User {$userId} joined room {$conversationId}\n";
+        }
+    }
+    
+    // ✅ جديد: مغادرة غرفة
+    private function handleLeaveRoom($from, $data)
+    {
+        $conversationId = $data['conversation_id'];
+        $userId = array_search($from, $this->users, true);
+        
+        if ($userId && isset($this->rooms[$conversationId])) {
+            unset($this->rooms[$conversationId][$userId]);
+            echo "👤 User {$userId} left room {$conversationId}\n";
+        }
+    }
+    
+    // ✅ جديد: جلب بيانات المستخدم
+    private function getUserDetails($userId)
+    {
+        $query = "SELECT id, username, full_name, profile_pic FROM users WHERE id = :id";
+        $stmt = $this->db->prepare($query);
+        $stmt->execute([':id' => $userId]);
+        
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+    
+    // ✅ جديد: إرسال قائمة المتصلين لمستخدم معين
+    private function sendOnlineUsersToClient($connection)
+    {
+        $onlineUsersData = [];
+        
+        foreach ($this->users as $userId => $conn) {
+            if ($conn !== $connection && isset($this->userDetails[$userId])) {
+                $onlineUsersData[] = $this->userDetails[$userId];
+            }
+        }
+        
+        $connection->send(json_encode([
+            'type' => 'online_users',
+            'users' => $onlineUsersData
+        ]));
+    }
+    
+    // ✅ جديد: بث قائمة المتصلين للجميع
+    private function broadcastOnlineUsers()
+    {
+        $onlineUsersData = [];
+        
+        foreach ($this->users as $userId => $conn) {
+            if (isset($this->userDetails[$userId])) {
+                $onlineUsersData[] = $this->userDetails[$userId];
+            }
+        }
+        
+        $message = json_encode([
+            'type' => 'online_users',
+            'users' => $onlineUsersData
+        ]);
+        
+        foreach ($this->users as $conn) {
+            $conn->send($message);
+        }
+    }
+    
     public function onClose(ConnectionInterface $conn)
     {
         $this->clients->detach($conn);
@@ -123,6 +248,8 @@ class ChatHandler implements MessageComponentInterface
         $user_id = array_search($conn, $this->users, true);
         if ($user_id !== false) {
             unset($this->users[$user_id]);
+            unset($this->userDetails[$user_id]);  // ✅ جديد
+            $this->broadcastOnlineUsers();         // ✅ جديد: تحديث القائمة
             echo "👋 User {$user_id} disconnected\n";
         }
         

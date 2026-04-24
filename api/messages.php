@@ -10,6 +10,7 @@ $requestMethod = $_SERVER['REQUEST_METHOD'];
 $requestData = getRequestData();
 $user = authenticate($db);
 
+
 // ============================================
 // بدء محادثة جديدة أو جلب محادثة موجودة
 // ============================================
@@ -101,11 +102,11 @@ else if ($requestMethod === 'GET' && isset($_GET['list'])) {
 else if ($requestMethod === 'GET' && isset($_GET['conversation_id'])) {
     
     $conversation_id = $_GET['conversation_id'];
-    $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 50;
+    $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 20;  // غيرنا default لـ 20
     $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 0;
     
     // التحقق من أن المستخدم مشارك في المحادثة
-    $checkQuery = "SELECT id FROM conversation_participants 
+    $checkQuery = "SELECT conversation_id FROM conversation_participants 
                    WHERE conversation_id = :conv_id AND user_id = :user_id";
     $checkStmt = $db->prepare($checkQuery);
     $checkStmt->bindParam(":conv_id", $conversation_id);
@@ -116,7 +117,7 @@ else if ($requestMethod === 'GET' && isset($_GET['conversation_id'])) {
         sendResponse(false, "غير مصرح لك برؤية هذه المحادثة", null, 403);
     }
     
-    // تحديث حالة القراءة للرسائل
+    // تحديث حالة القراءة للرسائل (من غير ما ننتظر)
     $updateQuery = "UPDATE messages SET is_read = 1 
                     WHERE conversation_id = :conv_id AND sender_id != :user_id AND is_read = 0";
     $updateStmt = $db->prepare($updateQuery);
@@ -124,12 +125,13 @@ else if ($requestMethod === 'GET' && isset($_GET['conversation_id'])) {
     $updateStmt->bindParam(":user_id", $user['id']);
     $updateStmt->execute();
     
-    // جلب الرسائل
+    // ✅ التعديل المهم: نجيب الرسائل بالترتيب الصحيح من البداية
+    // نجيب الأحدث أولاً عشان الـ Pagination يشتغل صح
     $query = "SELECT m.*, u.username, u.full_name
               FROM messages m
               JOIN users u ON m.sender_id = u.id
               WHERE m.conversation_id = :conv_id
-              ORDER BY m.created_at DESC
+              ORDER BY m.created_at DESC  -- الأحدث أولاً
               LIMIT :limit OFFSET :offset";
     
     $stmt = $db->prepare($query);
@@ -139,7 +141,8 @@ else if ($requestMethod === 'GET' && isset($_GET['conversation_id'])) {
     $stmt->execute();
     
     $messages = $stmt->fetchAll();
-    $messages = array_reverse($messages); // ترتيب تصاعدي للعرض
+    // ✅ نحولهم لترتيب تصاعدي (الأقدم أولاً) للعرض فقط
+    $messages = array_reverse($messages);
     
     sendResponse(true, "تم جلب الرسائل", ["messages" => $messages]);
 }

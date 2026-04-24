@@ -3,7 +3,7 @@
 
 class JWTHelper {
     // المفتاح السري - غير هذا في الإنتاج
-    private static $secret_key = 'HARA_SOCIAL_SECRET_KEY_2024_@#$%_VERY_SECURE';
+    private static $secret_key = "HARA_SOCIAL_SECRET_KEY_2026";
     private static $algorithm = 'HS256';
     private static $expiry = 86400; // يوم واحد (60*60*24)
     
@@ -40,7 +40,7 @@ class JWTHelper {
         $parts = explode('.', $jwt);
         
         if (count($parts) !== 3) {
-            return null;
+            return "part less 3 ";
         }
         
         list($header, $payload_encoded, $signature_encoded) = $parts;
@@ -50,7 +50,7 @@ class JWTHelper {
         $expected_signature_encoded = base64_encode($expected_signature);
         
         if ($signature_encoded !== $expected_signature_encoded) {
-            return null;
+            return "غير متطابق";
         }
         
         // فك تشفير ال payload
@@ -58,7 +58,7 @@ class JWTHelper {
         
         // التحقق من صلاحية الوقت
         if ($payload['exp'] < time()) {
-            return null; // منتهي الصلاحية
+            return "الوقت خلص"; // منتهي الصلاحية
         }
         
         return (object)$payload;

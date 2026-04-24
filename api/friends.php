@@ -9,6 +9,7 @@ $db = $database->getConnection();
 $requestMethod = $_SERVER['REQUEST_METHOD'];
 $requestData = getRequestData();
 $user = authenticate($db);
+$action = $_GET['action'] ?? '';
 
 // ============================================
 // إرسال طلب صداقة (SEND FRIEND REQUEST)
@@ -65,6 +66,43 @@ if ($requestMethod === 'POST' && isset($_GET['action']) && $_GET['action'] === '
     } else {
         sendResponse(false, "فشل إرسال الطلب");
     }
+}
+
+// جلب اقتراحات الأصدقاء
+
+if ($requestMethod === 'GET' && $action === 'suggestions') {
+    // جلب مستخدمين ليسوا أصدقاء ولم يرسلوا طلبات
+    $query = "SELECT u.id, u.username, u.full_name, u.profile_pic,
+              (SELECT COUNT(*) FROM friends f2 
+               WHERE (f2.user_id = u.id OR f2.friend_id = u.id) 
+               AND f2.status = 'accepted'
+               AND (f2.user_id IN (SELECT friend_id FROM friends WHERE user_id = :user_id AND status = 'accepted')
+                    OR f2.friend_id IN (SELECT friend_id FROM friends WHERE user_id = :user_id AND status = 'accepted'))
+              ) as mutual_friends
+              FROM users u
+              WHERE u.id != :user_id
+              AND u.id NOT IN (
+                  -- مستبعد: الأصدقاء الحاليين
+                  SELECT CASE WHEN user_id = :user_id THEN friend_id ELSE user_id END 
+                  FROM friends 
+                  WHERE (user_id = :user_id OR friend_id = :user_id) 
+                  AND status = 'accepted'
+                  UNION
+                  -- مستبعد: طلبات معلقة
+                  SELECT CASE WHEN user_id = :user_id THEN friend_id ELSE user_id END 
+                  FROM friends 
+                  WHERE (user_id = :user_id OR friend_id = :user_id) 
+                  AND status = 'pending'
+              )
+              ORDER BY mutual_friends DESC, RAND()
+              LIMIT 10";
+    
+    $stmt = $db->prepare($query);
+    $stmt->bindParam(":user_id", $user['id']);
+    $stmt->execute();
+    
+    $suggestions = $stmt->fetchAll();
+    sendResponse(true, "تم جلب الاقتراحات", ["suggestions" => $suggestions]);
 }
 
 // ============================================

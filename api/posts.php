@@ -49,8 +49,9 @@ if ($requestMethod === 'POST' && !isset($_GET['like'])) {
     }
 }
 
+
 // ============================================
-// جلب منشورات الأصدقاء (GET FEED)
+// جلب منشورات الجميع (FEED - بدون شرط الأصدقاء)
 // ============================================
 else if ($requestMethod === 'GET' && isset($_GET['feed'])) {
     
@@ -58,6 +59,7 @@ else if ($requestMethod === 'GET' && isset($_GET['feed'])) {
     $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 10;
     $offset = ($page - 1) * $limit;
     
+    // استعلام جديد: يجلب جميع المنشورات من جميع المستخدمين
     $query = "SELECT 
                 p.*,
                 u.username,
@@ -69,13 +71,6 @@ else if ($requestMethod === 'GET' && isset($_GET['feed'])) {
               JOIN users u ON p.user_id = u.id
               LEFT JOIN post_likes pl ON p.id = pl.post_id
               LEFT JOIN post_likes my_likes ON p.id = my_likes.post_id AND my_likes.user_id = :user_id
-              WHERE p.user_id IN (
-                  SELECT friend_id FROM friends WHERE user_id = :user_id AND status = 'accepted'
-                  UNION
-                  SELECT user_id FROM friends WHERE friend_id = :user_id AND status = 'accepted'
-                  UNION
-                  SELECT :user_id
-              )
               GROUP BY p.id
               ORDER BY p.created_at DESC
               LIMIT :limit OFFSET :offset";
@@ -88,18 +83,9 @@ else if ($requestMethod === 'GET' && isset($_GET['feed'])) {
     
     $posts = $stmt->fetchAll();
     
-    // جلب إجمالي العدد
-    $countQuery = "SELECT COUNT(DISTINCT p.id) as total 
-                   FROM posts p
-                   WHERE p.user_id IN (
-                       SELECT friend_id FROM friends WHERE user_id = :user_id AND status = 'accepted'
-                       UNION
-                       SELECT user_id FROM friends WHERE friend_id = :user_id AND status = 'accepted'
-                       UNION
-                       SELECT :user_id
-                   )";
+    // استعلام لحساب إجمالي عدد المنشورات (لـ pagination)
+    $countQuery = "SELECT COUNT(*) as total FROM posts";
     $countStmt = $db->prepare($countQuery);
-    $countStmt->bindParam(":user_id", $user['id']);
     $countStmt->execute();
     $total = $countStmt->fetch()['total'];
     
