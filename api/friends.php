@@ -68,43 +68,6 @@ if ($requestMethod === 'POST' && isset($_GET['action']) && $_GET['action'] === '
     }
 }
 
-// جلب اقتراحات الأصدقاء
-
-if ($requestMethod === 'GET' && $action === 'suggestions') {
-    // جلب مستخدمين ليسوا أصدقاء ولم يرسلوا طلبات
-    $query = "SELECT u.id, u.username, u.full_name, u.profile_pic,
-              (SELECT COUNT(*) FROM friends f2 
-               WHERE (f2.user_id = u.id OR f2.friend_id = u.id) 
-               AND f2.status = 'accepted'
-               AND (f2.user_id IN (SELECT friend_id FROM friends WHERE user_id = :user_id AND status = 'accepted')
-                    OR f2.friend_id IN (SELECT friend_id FROM friends WHERE user_id = :user_id AND status = 'accepted'))
-              ) as mutual_friends
-              FROM users u
-              WHERE u.id != :user_id
-              AND u.id NOT IN (
-                  -- مستبعد: الأصدقاء الحاليين
-                  SELECT CASE WHEN user_id = :user_id THEN friend_id ELSE user_id END 
-                  FROM friends 
-                  WHERE (user_id = :user_id OR friend_id = :user_id) 
-                  AND status = 'accepted'
-                  UNION
-                  -- مستبعد: طلبات معلقة
-                  SELECT CASE WHEN user_id = :user_id THEN friend_id ELSE user_id END 
-                  FROM friends 
-                  WHERE (user_id = :user_id OR friend_id = :user_id) 
-                  AND status = 'pending'
-              )
-              ORDER BY mutual_friends DESC, RAND()
-              LIMIT 10";
-    
-    $stmt = $db->prepare($query);
-    $stmt->bindParam(":user_id", $user['id']);
-    $stmt->execute();
-    
-    $suggestions = $stmt->fetchAll();
-    sendResponse(true, "تم جلب الاقتراحات", ["suggestions" => $suggestions]);
-}
-
 // ============================================
 // قبول طلب صداقة (ACCEPT FRIEND REQUEST)
 // ============================================
@@ -181,27 +144,6 @@ else if ($requestMethod === 'GET' && isset($_GET['requests'])) {
 }
 
 // ============================================
-// جلب قائمة الأصدقاء (GET FRIENDS LIST)
-// ============================================
-else if ($requestMethod === 'GET' && !isset($_GET['requests'])) {
-    
-    $query = "SELECT DISTINCT u.id, u.username, u.full_name, u.email, u.profile_pic, u.bio
-              FROM users u
-              WHERE u.id IN (
-                  SELECT friend_id FROM friends WHERE user_id = :user_id AND status = 'accepted'
-                  UNION
-                  SELECT user_id FROM friends WHERE friend_id = :user_id AND status = 'accepted'
-              )
-              ORDER BY u.full_name ASC";
-    
-    $stmt = $db->prepare($query);
-    $stmt->bindParam(":user_id", $user['id']);
-    $stmt->execute();
-    
-    $friends = $stmt->fetchAll();
-    
-    sendResponse(true, "تم جلب الأصدقاء", ["friends" => $friends]);
-}
 
 // ============================================
 // إزالة صديق (REMOVE FRIEND)
@@ -222,6 +164,76 @@ else if ($requestMethod === 'DELETE' && isset($_GET['friend_id'])) {
     } else {
         sendResponse(false, "فشل إزالة الصديق");
     }
+}
+
+else if ($requestMethod === 'GET' && isset($_GET['q'])) {
+    
+    $searchQuery = trim($_GET['q']);
+    
+    if (empty($searchQuery)) {
+        sendResponse(false, "يرجى إدخال نص للبحث", []);
+        exit;
+    }
+    
+    // البحث عن المستخدمين (باستثناء المستخدم نفسه)
+    $query = "SELECT id, username, full_name, email, profile_pic, bio
+              FROM users 
+              WHERE (username LIKE :query 
+                     OR full_name LIKE :query 
+                     OR email LIKE :query)
+                    AND id != :user_id
+              ORDER BY 
+                  CASE 
+                      WHEN username = :exact THEN 1
+                      WHEN full_name = :exact THEN 2
+                      WHEN username LIKE :query THEN 3
+                      WHEN full_name LIKE :query THEN 4
+                      ELSE 5
+                  END,
+                  full_name ASC
+              LIMIT 20";
+    
+    $searchTerm = "%{$searchQuery}%";
+    
+    $stmt = $db->prepare($query);
+    $stmt->bindParam(":query", $searchTerm);
+    $stmt->bindParam(":exact", $searchQuery);
+    $stmt->bindParam(":user_id", $user['id']);
+    $stmt->execute();
+    
+    $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // إضافة حالة الصداقة لكل مستخدم
+    foreach ($users as &$friendUser) {
+        // التحقق من وجود طلب صداقة
+        $friendQuery = "SELECT status, 
+                        CASE 
+                            WHEN user_id = :user_id THEN 'sent'
+                            WHEN friend_id = :user_id THEN 'received'
+                            ELSE 'none'
+                        END as direction
+                        FROM friends 
+                        WHERE (user_id = :user_id AND friend_id = :friend_id)
+                           OR (user_id = :friend_id AND friend_id = :user_id)
+                        LIMIT 1";
+        
+        $friendStmt = $db->prepare($friendQuery);
+        $friendStmt->bindParam(":user_id", $user['id']);
+        $friendStmt->bindParam(":friend_id", $friendUser['id']);
+        $friendStmt->execute();
+        
+        $friendship = $friendStmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($friendship) {
+            $friendUser['friendship_status'] = $friendship['status'];
+            $friendUser['friendship_direction'] = $friendship['direction'];
+        } else {
+            $friendUser['friendship_status'] = 'none';
+            $friendUser['friendship_direction'] = null;
+        }
+    }
+    
+    sendResponse(true, "تم جلب نتائج البحث", ["users" => $users]);
 }
 
 else {

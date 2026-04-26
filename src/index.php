@@ -9,7 +9,7 @@ use Ratchet\Http\HttpServer;
 use Ratchet\WebSocket\WsServer;
 use HaraSocial\ChatHandler;
 
-echo "🚀 HARA SOCIAL WebSocket Server\n";
+
 echo "📡 Running on ws://localhost:8080\n";
 echo "⚠️  Press Ctrl+C to stop\n\n";
 

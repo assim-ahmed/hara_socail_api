@@ -10,9 +10,8 @@ $db = $database->getConnection();
 $requestMethod = $_SERVER['REQUEST_METHOD'];
 $requestData = getRequestData();
 
-// ============================================
-// تسجيل مستخدم جديد (REGISTER)
-// ============================================
+
+
 // تسجيل مستخدم جديد (REGISTER)
 // ============================================
 if ($requestMethod === 'POST' && isset($_GET['action']) && $_GET['action'] === 'register') {
@@ -31,7 +30,6 @@ if ($requestMethod === 'POST' && isset($_GET['action']) && $_GET['action'] === '
     if (strlen($requestData['username']) < 3 || strlen($requestData['username']) > 50) {
         sendResponse(false, "اسم المستخدم يجب أن يكون بين 3 و 50 حرفاً");
     }
-    
     // التحقق من طول كلمة المرور
     if (strlen($requestData['password']) < 6) {
         sendResponse(false, "كلمة المرور يجب أن تكون 6 أحرف على الأقل");
@@ -52,7 +50,7 @@ if ($requestMethod === 'POST' && isset($_GET['action']) && $_GET['action'] === '
     }
 
     // معالجة رفع الصورة (إن وجدت)
-    $filename = null;
+    $filename = "user".rand(1,4).".png";
     
     // التحقق من وجود ملف مرفوع
     if (isset($_FILES['profile_image']) && $_FILES['profile_image']['error'] === UPLOAD_ERR_OK) {
@@ -106,7 +104,7 @@ if ($requestMethod === 'POST' && isset($_GET['action']) && $_GET['action'] === '
     $stmt->bindValue(":email", $requestData['email']);
     $stmt->bindValue(":password", $hashedPassword);
     $stmt->bindValue(":full_name", $full_name);
-    $stmt->bindValue(":profile_pic", $filename);
+    $stmt->bindValue(":profile_pic", "uploads/profiles/$filename");
     
     if ($stmt->execute()) {
         $user_id = $db->lastInsertId();
